@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Survive Quest — Fight, Climb, Escape</title>
+<style>
+:root{color-scheme:dark;--bg:#0a1020;--panel:#121d30;--line:#3a4c67;--gold:#ffc45e;--green:#35d48a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#f5f7fb;font:15px system-ui,Arial,sans-serif}
+main{max-width:1000px;margin:auto;padding:12px}
+header,.hud,.controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+header{justify-content:space-between;padding:8px 0 14px}h1{font-size:clamp(22px,5vw,34px);margin:0;color:#ff655e}header p{margin:3px 0;color:#bdc9dc}
+.hud{background:var(--panel);border:1px solid var(--line);padding:10px;border-radius:12px;margin-bottom:10px}
+.stat{flex:1;min-width:100px;font-size:12px;color:#bdc9dc}.stat strong{color:white;font-size:16px}
+.meter{height:8px;background:#354052;border-radius:8px;overflow:hidden;margin-top:5px}.fill{height:100%;width:100%;background:var(--green);transition:width .15s}
+.stage{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#111827}
+canvas{display:block;width:100%;height:auto;touch-action:none}
+#message{padding:12px;background:#101a2a;color:var(--gold);font-weight:700}
+.controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin:10px 0}
+button{background:#202f48;border:1px solid #465b79;color:white;border-radius:12px;padding:13px 8px;font-size:15px;font-weight:750;cursor:pointer;touch-action:manipulation}
+button:active{background:#246b62;transform:scale(.98)}button:focus-visible{outline:3px solid var(--gold)}
+.help{font-size:13px;color:#bdc9dc;line-height:1.6;padding:0 2px 15px}
+@media(max-width:520px){main{padding:8px}.controls{gap:7px}.controls button{font-size:13px;padding:13px 3px}.hud{gap:7px}}
+</style>
+</head>
+<body>
+<main>
+<header><div><h1>SURVIVE QUEST</h1><p>Fight · Climb · Reach Safety</p></div><button id="restart">↻ Restart</button></header>
+<section class="hud" aria-label="Game status">
+ <div class="stat">❤️ HEALTH <strong id="hp">100</strong><div class="meter"><div id="healthbar" class="fill"></div></div></div>
+ <div class="stat">🔫 AMMO <strong id="ammo">12</strong> / <span id="reserve">60</span></div>
+ <div class="stat">⭐ SCORE <strong id="score">0</strong></div>
+ <div class="stat">✚ MEDKITS <strong id="medkits">1</strong></div>
+</section>
+<section class="stage"><canvas id="game" width="800" height="440" aria-label="Survive Quest platform game"></canvas><div id="message" role="status">MISSION: Defeat the attackers and climb to the green SAFE ZONE.</div></section>
+<section class="controls" aria-label="Touch controls">
+ <button id="left" aria-label="Move left">◀ LEFT</button><button id="jump">⬆ JUMP / CLIMB</button><button id="right">RIGHT ▶</button>
+ <button id="fire">🎯 FIRE</button><button id="reload">↻ RELOAD</button><button id="heal">✚ MEDKIT</button>
+</section>
+<p class="help"><b>Keyboard:</b> A/D or ←/→ move · W/↑/Space jump or climb · J or click FIRE · R reload. On mobile, use the buttons. Reach the glowing green rooftop to win.</p>
+</main>
+<script>
+(() => {
+"use strict";
+const canvas=document.querySelector("#game"),ctx=canvas.getContext("2d");
+const $=id=>document.getElementById(id),W=800,H=440;
+const platforms=[{x:0,y:385,w:205},{x:255,y:350,w:130},{x:430,y:305,w:130},{x:535,y:230,w:265},{x:685,y:145,w:115}];
+const ladders=[{x:220,y:350,bottom:385},{x:400,y:305,bottom:350},{x:585,y:230,bottom:305},{x:710,y:145,bottom:230}];
+const safe={x:710,y:107,w:65,h:36};
+let player,bullets,enemyBullets,enemies,particles,score,ammo,reserve,hp,medkits,frame,ended,won,climbing,keys={};
+function reset(){
+ player={x:55,y:348,vx:0,vy:0,w:23,h:37,face:1,ground:false};
+ bullets=[];enemyBullets=[];particles=[];score=0;ammo=12;reserve=60;hp=100;medkits=1;frame=0;ended=false;won=false;climbing=false;keys={};
+ enemies=[{x:320,y:310,hp:2,alive:true,t:50},{x:490,y:265,hp:2,alive:true,t:85},{x:650,y:190,hp:3,alive:true,t:110}];
+ $("message").textContent="MISSION: Defeat the attackers and climb to the green SAFE ZONE.";
+ updateHUD();
+}
+function updateHUD(){
+ $("hp").textContent=hp;$("healthbar").style.width=hp+"%";$("healthbar").style.background=hp<30?"#ff514d":"#35d48a";
+ $("ammo").textContent=ammo;$("reserve").textContent=reserve;$("score").textContent=score;$("medkits").textContent=medkits;
+}
+function rect(x,y,w,h,color){ctx.fillStyle=color;ctx.fillRect(x,y,w,h)}
+function label(s,x,y,size,color){ctx.font=`bold ${size}px system-ui`;ctx.fillStyle=color;ctx.fillText(s,x,y)}
+function draw(){
+ ctx.clearRect(0,0,W,H);
+ const bg=ctx.createLinearGradient(0,0,0,H);bg.addColorStop(0,"#101a34");bg.addColorStop(1,"#384055");ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+ for(let i=0;i<15;i++){let x=i*61;rect(x,130+(i%4)*23,35,220,"#19253b");for(let j=0;j<5;j++)rect(x+6+(j%3)*9,145+j*24,4,7,"#536078")}
+ for(const p of platforms){rect(p.x,p.y,p.w,H-p.y,"#354356");rect(p.x,p.y,p.w,6,"#8995a5");for(let x=p.x+7;x<p.x+p.w-4;x+=25)rect(x,p.y+12,18,3,"#59677b")}
+ for(const l of ladders){rect(l.x-10,l.y,4,l.bottom-l.y,"#cf8e48");rect(l.x+7,l.y,4,l.bottom-l.y,"#cf8e48");for(let y=l.y+5;y<l.bottom;y+=10)rect(l.x-10,y,21,3,"#e9b873")}
+ rect(safe.x,safe.y,safe.w,safe.h,"#116447");rect(safe.x+5,safe.y+5,safe.w-10,safe.h-5,"#22b981");label("SAFE",safe.x+9,safe.y+23,15,"#effff7");
+ for(const e of enemies){if(!e.alive)continue;rect(e.x,e.y+8,21,23,"#a64c49");rect(e.x+3,e.y,15,14,"#cfa17f");rect(e.x+5,e.y+4,4,3,"#20202c");rect(e.x+13,e.y+4,4,3,"#20202c");rect(e.x+15,e.y+16,17,5,"#222c3b");rect(e.x+28,e.y+17,12,3,"#9da7b7");rect(e.x,e.y-6,22,3,"#30394a");rect(e.x,e.y-6,22*Math.max(0,e.hp/3),3,"#ff6b62")}
+ for(const b of bullets)rect(b.x,b.y,12,3,"#ffd568");
+ for(const b of enemyBullets)rect(b.x,b.y,7,3,"#ff7768");
+ for(const p of particles){ctx.globalAlpha=Math.max(0,p.life/18);rect(p.x,p.y,3,3,p.col);ctx.globalAlpha=1}
+ if(!won){const x=player.x,y=player.y;rect(x+5,y+9,15,21,"#2588c7");rect(x+7,y,13,13,"#e7bc97");rect(x+9,y+4,3,3,"#172033");rect(x+17,y+4,3,3,"#172033");rect(x+5,y+28,6,9,"#202e48");rect(x+15,y+28,6,9,"#202e48");rect(player.face>0?x+20:x-15,y+17,player.face>0?19:17,5,"#d3d9e2")}
+ if(ended||won){rect(100,145,600,135,"rgba(9,17,30,.94)");label(won?"MISSION COMPLETE!":"MISSION FAILED",235,190,29,won?"#55f0ac":"#ff7777");label(won?"You escaped to safety!":"You were overwhelmed. Try again.",215,223,16,"#fff");label("Press RESTART to play again",265,250,13,"#d3dcec")}
+}
+function shoot(){if(ended||won)return;if(ammo<=0){$("message").textContent="Out of ammo! Reload with R.";return}ammo--;bullets.push({x:player.face>0?player.x+34:player.x-12,y:player.y+19,vx:player.face*8,life:80});updateHUD()}
+function reload(){if(ended||won)return;const n=Math.min(12-ammo,reserve);ammo+=n;reserve-=n;updateHUD()}
+function jump(){if(ended||won)return;const l=ladders.find(l=>Math.abs(player.x+12-l.x)<24&&player.y+37>=l.y&&player.y+37<=l.bottom+7);if(l){climbing=true;player.vy=-2.6;return}if(player.ground){player.vy=-8;player.ground=false}}
+function fireEnemy(e){enemyBullets.push({x:e.x+(player.x<e.x?-4:28),y:e.y+19,vx:player.x<e.x?-3.2:3.2,life:140})}
+function update(){
+ if(!ended&&!won){
+  frame++;const left=keys.ArrowLeft||keys.a||keys.A,right=keys.ArrowRight||keys.d||keys.D,up=keys.ArrowUp||keys.w||keys.W||keys[" "];
+  player.vx=left?-3:right?3:0;if(player.vx)player.face=player.vx>0?1:-1;
+  const ladder=ladders.find(l=>Math.abs(player.x+12-l.x)<19&&player.y+37>=l.y-5&&player.y+37<=l.bottom+5);
+  if(up&&ladder){climbing=true;player.vy=-2.4;player.x+=(ladder.x-(player.x+12))*.12}
+  else if(climbing&&!ladder)climbing=false;
+  if(climbing){if(!up)player.vy=0;player.y+=player.vy;if(ladder&&player.y+37<=ladder.y+2){climbing=false;player.y=ladder.y-37;player.vy=0}}
+  else{player.x+=player.vx;player.vy+=.36;player.y+=player.vy}
+  player.x=Math.max(0,Math.min(W-player.w,player.x));player.ground=false;
+  for(const p of platforms)if(player.x+player.w>p.x&&player.x<p.x+p.w&&player.y+player.h>=p.y&&player.y+player.h<=p.y+12&&player.vy>=0){player.y=p.y-player.h;player.vy=0;player.ground=true}
+  if(player.y>H){hp=Math.max(0,hp-25);player.x=40;player.y=348;player.vy=0}
+  for(const b of bullets){b.x+=b.vx;b.life--;for(const e of enemies)if(e.alive&&b.x>e.x-3&&b.x<e.x+35&&b.y>e.y&&b.y<e.y+30){e.hp--;b.life=0;for(let i=0;i<5;i++)particles.push({x:b.x,y:b.y,vx:Math.random()*3-1.5,vy:Math.random()*-3,life:15,col:"#ffb85c"});if(e.hp<=0){e.alive=false;score+=100;$("message").textContent="Attacker defeated! Keep climbing.";updateHUD()}break}}
+  bullets=bullets.filter(b=>b.life>0&&b.x>0&&b.x<W);
+  for(const e of enemies)if(e.alive&&--e.t<=0){fireEnemy(e);e.t=90+Math.random()*70}
+  for(const b of enemyBullets){b.x+=b.vx;b.life--;if(b.x>player.x&&b.x<player.x+player.w&&b.y>player.y&&b.y<player.y+player.h){hp=Math.max(0,hp-8);b.life=0;updateHUD()}}
+  enemyBullets=enemyBullets.filter(b=>b.life>0&&b.x>0&&b.x<W);
+  for(const p of particles){p.x+=p.vx||0;p.y+=p.vy||0;p.life--}particles=particles.filter(p=>p.life>0);
+  if(player.x+player.w>safe.x&&player.y<safe.y+safe.h&&player.y+player.h>safe.y){won=true;$("message").textContent="🎉 You reached safety! Mission accomplished!"}
+  if(hp<=0){ended=true;$("message").textContent="Mission failed — try a different route."}
+ }
+ draw();requestAnimationFrame(update)
+}
+function hold(id,key){const b=$(id);b.addEventListener("pointerdown",e=>{e.preventDefault();keys[key]=true;try{b.setPointerCapture(e.pointerId)}catch(_){}});for(const ev of ["pointerup","pointercancel","lostpointercapture"])b.addEventListener(ev,()=>keys[key]=false)}
+hold("left","ArrowLeft");hold("right","ArrowRight");
+$("jump").addEventListener("pointerdown",e=>{e.preventDefault();keys.ArrowUp=true;jump()});for(const ev of ["pointerup","pointercancel","pointerleave"])$("jump").addEventListener(ev,()=>keys.ArrowUp=false);
+$("fire").addEventListener("pointerdown",e=>{e.preventDefault();shoot()});$("reload").addEventListener("click",reload);
+$("heal").addEventListener("click",()=>{if(medkits>0&&!ended&&!won){hp=Math.min(100,hp+35);medkits--;updateHUD();$("message").textContent="Medkit used. Health restored."}else $("message").textContent="No medkits left!"});
+$("restart").addEventListener("click",reset);
+window.addEventListener("keydown",e=>{if(["ArrowLeft","ArrowRight","ArrowUp"," "].includes(e.key))e.preventDefault();keys[e.key]=true;if((e.key==="j"||e.key==="J")&&!e.repeat)shoot();if((e.key==="r"||e.key==="R")&&!e.repeat)reload();if(["w","W","ArrowUp"," "].includes(e.key)&&!e.repeat)jump()});
+window.addEventListener("keyup",e=>keys[e.key]=false);
+reset();update();
+})();
+</script>
+</body>
+</html>
